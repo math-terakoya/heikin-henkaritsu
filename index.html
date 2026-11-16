@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<!-- © 2026 math-terakoya ／ CC BY-NC-SA 4.0（表示・非営利・継承）https://creativecommons.org/licenses/by-nc-sa/4.0/deed.ja -->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:;">
+<title>平均変化率グラフ</title>
+<style>
+:root{
+  /* 方眼ノートの1ページ。上から 関数えらび → グラフ(伸び縮み) → 式 → 操作。色はグラフにだけ使う */
+  --paper:#EEF2F8;
+  --panel:#FFFFFF;
+  --ink:#1B2740;
+  --muted:#5D6B86;
+  --grid:#D6DEEB;
+  --axis:#7D8AA5;
+  --up:#E23E7E;
+  --down:#1794D2;
+  --up-soft:#FCE3EE;
+  --down-soft:#DDF1FB;
+  /* 外から フォントを 読まない（ほかの アプリと 同じ 決まり。11-16 先生 OK）。端末に ある 字で */
+  --font-note:"Hiragino Maru Gothic ProN","Klee","Yu Gothic",sans-serif;
+  --font-ui:"Hiragino Sans","Yu Gothic","Meiryo",sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --paper:#111725;
+    --panel:#1A2233;
+    --ink:#E9EEF8;
+    --muted:#9BA8C2;
+    --grid:#2A3550;
+    --axis:#7381A0;
+    --up:#FF7DAE;
+    --down:#5FC6FF;
+    --up-soft:#4A2238;
+    --down-soft:#1A3A52;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --paper:#111725;
+  --panel:#1A2233;
+  --ink:#E9EEF8;
+  --muted:#9BA8C2;
+  --grid:#2A3550;
+  --axis:#7381A0;
+  --up:#FF7DAE;
+  --down:#5FC6FF;
+  --up-soft:#4A2238;
+  --down-soft:#1A3A52;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--font-ui);
+  font-weight:500;
+  font-size:15px;
+  line-height:1.5;
+  -webkit-text-size-adjust:100%;
+}
+.app{
+  height:100%;
+  max-width:760px;
+  margin:0 auto;
+  padding:10px 16px 34px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+/* 見出しと関数えらび */
+.top{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 12px}
+h1{
+  margin:0;
+  font-family:var(--font-note);
+  font-weight:600;
+  font-size:20px;
+  letter-spacing:.04em;
+  text-wrap:balance;
+}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg button{
+  appearance:none;
+  font:inherit;
+  color:var(--ink);
+  background:var(--panel);
+  border:1.5px solid var(--grid);
+  border-radius:999px;
+  padding:5px 13px;
+  min-height:36px;
+  cursor:pointer;
+}
+.seg button[aria-pressed="true"]{
+  background:var(--ink);
+  border-color:var(--ink);
+  color:var(--paper);
+}
+.fn button{font-family:var(--font-note);font-weight:600;font-size:16px}
+.fn button.plain{font-family:var(--font-ui);font-weight:500;font-size:15px}
+.coef{display:flex;align-items:center;gap:5px;height:38px;font-family:var(--font-note);font-weight:600;font-size:16px;white-space:nowrap}
+.coef sup{font-size:.7em}
+.coef input{flex:1 1 0;min-width:0;max-width:5em;height:36px;margin:0;padding:0 4px;font-family:var(--font-note);font-size:17px;text-align:center;color:var(--ink);background:var(--panel);border:1.5px solid var(--axis);border-radius:8px}
+button:focus-visible,input:focus-visible{outline:2.5px solid var(--down);outline-offset:2px}
+
+/* グラフ */
+.plot{
+  flex:1 1 auto;
+  min-height:230px;
+  background:var(--panel);
+  border:1.5px solid var(--grid);
+  border-radius:10px;
+  overflow:hidden;
+  position:relative;
+}
+#g{display:block;width:100%;height:100%;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
+#g.dragging{cursor:grabbing}
+.zoom{position:absolute;top:6px;right:6px;display:flex;gap:6px}
+.zoom button{appearance:none;font:inherit;font-size:13px;min-width:46px;height:34px;padding:0 8px;border-radius:8px;border:1.5px solid var(--grid);background:var(--panel);color:var(--ink);cursor:pointer}
+.zoom button:disabled{color:var(--axis);cursor:default}
+.gl{stroke:var(--grid);stroke-width:1}
+.ax{stroke:var(--axis);stroke-width:1.5}
+.tk{fill:var(--muted);font-family:var(--font-note);font-size:12px}
+.curve{fill:none;stroke:var(--ink);stroke-width:3.5;stroke-linecap:round;stroke-linejoin:round}
+.curve.up{stroke:var(--up)}
+.curve.down{stroke:var(--down)}
+.sec{stroke:var(--ink);stroke-width:2;stroke-linecap:round}
+.sec.up{stroke:var(--up)}
+.sec.down{stroke:var(--down)}
+.leg{fill:none;stroke:var(--muted);stroke-width:1.5;stroke-dasharray:5 5}
+.pt{fill:var(--panel);stroke:var(--ink);stroke-width:3}
+.halo{fill:var(--ink);opacity:.1}
+.pl{fill:var(--ink);font-family:var(--font-note);font-weight:600;font-size:16px;paint-order:stroke;stroke:var(--panel);stroke-width:4px;stroke-linejoin:round}
+
+/* 式 */
+.read{
+  background:var(--panel);
+  border:1.5px solid var(--grid);
+  border-radius:10px;
+  padding:8px 12px;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.eqrow{display:flex;align-items:center;justify-content:space-between;gap:10px;height:48px;overflow:hidden}
+.eq{
+  display:flex;
+  flex-wrap:nowrap;
+  white-space:nowrap;
+  align-items:center;
+  gap:6px;
+  font-family:var(--font-note);
+  font-size:17px;
+  font-variant-numeric:tabular-nums;
+}
+.eq .name{font-family:var(--font-ui);font-size:13px;color:var(--muted);margin-right:2px}
+.frac{display:inline-flex;flex-direction:column;align-items:center;line-height:1.25}
+.frac span{padding:0 5px;white-space:nowrap}
+.frac span:first-child{border-bottom:1.5px solid var(--ink)}
+.val{
+  font-weight:600;
+  font-size:22px;
+  padding:0 10px;
+  border-radius:8px;
+  border:1.5px solid var(--grid);
+}
+.val.up{color:var(--up);background:var(--up-soft);border-color:transparent}
+.val.down{color:var(--down);background:var(--down-soft);border-color:transparent}
+.res{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.pts{font-family:var(--font-note);font-size:14px;line-height:1.45;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.pts span{display:block}
+.hide{visibility:hidden}
+#eq{justify-content:flex-start}
+@media (max-width:350px){.eq{font-size:15px}.val{font-size:19px}.pts{font-size:12px}.eq .name{font-size:12px}}
+.note{font-size:14px;color:var(--muted)}
+
+/* 操作 */
+.ctrl{display:flex;flex-direction:column;gap:6px}
+.row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 12px}
+.checks{display:flex;flex-wrap:wrap;gap:0 18px}
+.check{display:flex;align-items:center;gap:7px;font-size:14px;cursor:pointer;min-height:36px}
+.check input{width:18px;height:18px;accent-color:var(--ink);margin:0}
+.sw{display:inline-block;width:18px;height:4px;border-radius:2px;vertical-align:middle;margin:0 2px 2px}
+.sw.up{background:var(--up)}
+.sw.down{background:var(--down)}
+.sl{display:grid;grid-template-columns:auto auto 1fr;align-items:center;gap:6px 8px}
+.sl label{font-family:var(--font-note);font-size:16px;white-space:nowrap}
+.sl input[type=number]{width:4.6em;height:36px;margin:0 6px 0 0;padding:0 6px;font-family:var(--font-note);font-size:17px;font-variant-numeric:tabular-nums;text-align:right;color:var(--ink);background:var(--panel);border:1.5px solid var(--axis);border-radius:8px;-moz-appearance:textfield;appearance:textfield}
+.sl input[type=number]::-webkit-outer-spin-button,.sl input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.sl input[type=range]{width:100%;height:30px;margin:0;accent-color:var(--ink)}
+
+@media (min-width:620px){
+  body{font-size:16px}
+  h1{font-size:23px}
+  .eq{font-size:19px}
+  .val{font-size:25px}
+  .tk{font-size:13px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <h1>平均変化率グラフ</h1>
+    <div class="seg fn" id="fnSeg" role="group" aria-label="関数をえらぶ">
+      <button type="button" data-fn="exp" aria-pressed="true">y = 2<sup>x</sup></button>
+      <button type="button" data-fn="sq" aria-pressed="false">y = x<sup>2</sup></button>
+      <button type="button" data-fn="cub" aria-pressed="false">y = ¼x<sup>3</sup> − 3x</button>
+      <button type="button" data-fn="custom" aria-pressed="false" class="plain">自由</button>
+    </div>
+  </div>
+
+  <div class="coef" id="coef">
+    <span>y =</span>
+    <input type="text" id="c3" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="xの3乗の係数">
+    <span>x<sup>3</sup> +</span>
+    <input type="text" id="c2" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="xの2乗の係数">
+    <span>x<sup>2</sup> +</span>
+    <input type="text" id="c1" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="xの係数">
+    <span>x +</span>
+    <input type="text" id="c0" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="定数項">
+  </div>
+
+  <div class="plot">
+    <svg id="g" role="img" aria-label="関数のグラフと、2点A・Bを通る直線"></svg>
+    <div class="zoom hide" id="zoom">
+      <button type="button" id="zOut" aria-label="縦方向をちぢめて表示">縦 −</button>
+      <button type="button" id="zIn" aria-label="縦方向を広げて表示">縦 ＋</button>
+    </div>
+  </div>
+
+  <div class="read" aria-live="polite">
+    <div class="eqrow">
+      <div class="eq"><span class="name">平均変化率</span><span>=</span><span class="frac"><span>f(b) − f(a)</span><span>b − a</span></span></div>
+      <div class="pts" id="pts"><span id="pA"></span><span id="pB"></span></div>
+    </div>
+    <div class="eqrow eq" id="eq"></div>
+  </div>
+
+  <div class="ctrl">
+    <div class="sl">
+      <label for="n1" id="l1"></label>
+      <input type="number" id="n1" step="any" autocomplete="off">
+      <input type="range" id="s1" step="0.1">
+      <label for="n2" id="l2"></label>
+      <input type="number" id="n2" step="any" autocomplete="off">
+      <input type="range" id="s2" step="0.1">
+    </div>
+    <div class="row">
+      <div class="seg" id="modeSeg" role="group" aria-label="2点の動かし方">
+        <button type="button" data-mode="free" aria-pressed="true">2点を自由に動かす</button>
+        <button type="button" data-mode="fixed" aria-pressed="false">幅 h を決めて動かす</button>
+      </div>
+      <div class="checks">
+        <label class="check" for="curveOn">
+          <input type="checkbox" id="curveOn" checked>
+          <span>グラフを表示</span>
+        </label>
+        <label class="check" for="colorOn">
+          <input type="checkbox" id="colorOn" checked>
+          <span>増加<i class="sw up"></i>・減少<i class="sw down"></i>を色分け</span>
+        </label>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var XMIN = -4, XMAX = 4, HMIN = 0.1, HMAX = 5, HIN = 0.01;
+
+  var FUNCS = {
+    exp: { f: function(x){ return Math.pow(2, x); },
+           d: function(x){ return Math.LN2 * Math.pow(2, x); },
+           y: [-1, 17], yGrid: 2, yLabel: 4 },
+    sq:  { f: function(x){ return x * x; },
+           d: function(x){ return 2 * x; },
+           y: [-1, 17], yGrid: 2, yLabel: 4 },
+    cub: { f: function(x){ return x * x * x / 4 - 3 * x; },
+           d: function(x){ return 0.75 * x * x - 3; },
+           y: [-6, 6], yGrid: 1, yLabel: 2 }
+  };
+
+  /* 係数を自分で決める3次までの式。縦の範囲はグラフ全体が入るように自動で決める */
+  var PRESET = { sq: ["0", "1", "0", "0"], cub: ["1/4", "0", "-3", "0"] };
+  var coefText = ["1", "0", "-3", "0"];
+  var zoom = 1;
+  function parseCoef(t){
+    t = String(t).replace(/[０-９．／]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+                 .replace(/[−ー―‐－]/g, "-").replace(/[＋]/g, "+").replace(/\s+/g, "");
+    if (t === "") return 0;
+    var m = /^([+-]?(?:\d+\.?\d*|\.\d+))(?:\/(\d+\.?\d*|\.\d+))?$/.exec(t);
+    if (!m) return null;
+    var v = parseFloat(m[1]);
+    if (m[2] !== undefined){ var q = parseFloat(m[2]); if (q === 0) return null; v = v / q; }
+    return isFinite(v) ? v : null;
+  }
+  function niceStep(v){
+    var p = Math.pow(10, Math.floor(Math.log(v) / Math.LN10)), m = v / p;
+    return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p;
+  }
+  function buildCustom(){
+    var c = coefText.map(function(t){ var v = parseCoef(t); return v === null ? 0 : v; });
+    var f = function(x){ return ((c[0] * x + c[1]) * x + c[2]) * x + c[3]; };
+    var d = function(x){ return (3 * c[0] * x + 2 * c[1]) * x + c[2]; };
+    var lo = 0, hi = 0, i, v;
+    for (i = 0; i <= 400; i++){ v = f(XMIN + (XMAX - XMIN) * i / 400); if (v < lo) lo = v; if (v > hi) hi = v; }
+    if (hi - lo < 4){ var mid = (hi + lo) / 2; lo = Math.min(lo, mid - 2); hi = Math.max(hi, mid + 2); }
+    lo /= zoom; hi /= zoom;
+    var pad = (hi - lo) * 0.07, step = niceStep((hi - lo) / 8);
+    FUNCS.custom = { f: f, d: d, y: [lo - pad, hi + pad], yGrid: step, yLabel: step * 2 };
+  }
+  buildCustom();
+
+  var state = { fn: "exp", mode: "free", a: 0, b: 2, h: 2, color: true, curve: true };
+
+  var svg = document.getElementById("g");
+  var eqEl = document.getElementById("eq");
+  var pA = document.getElementById("pA"), pB = document.getElementById("pB");
+  var s1 = document.getElementById("s1"), s2 = document.getElementById("s2");
+  var l1 = document.getElementById("l1"), l2 = document.getElementById("l2");
+  var n1 = document.getElementById("n1"), n2 = document.getElementById("n2");
+  var colorOn = document.getElementById("colorOn");
+
+  function r1(v){ return Math.round(v * 10) / 10; }
+  function clamp(v, lo, hi){ return Math.min(hi, Math.max(lo, v)); }
+  function round3(v){ var r = Math.round(v * 100) / 100; return r === 0 ? 0 : r; }
+  function r2(v){ return Math.round(v * 100) / 100; }
+  function exact(v){ return Math.abs(v - round3(v)) < 1e-9; }
+  function fmt(v){ var r = round3(v); return (r < 0 ? "−" : "") + String(Math.abs(r)); }
+  function par(v){ var s = fmt(v); return round3(v) < 0 ? "(" + s + ")" : s; }
+  function signed(v){ var r = round3(v); return (r > 0 ? "+" : "") + fmt(v); }
+
+  /* ---------- グラフ ---------- */
+  var W = 0, H = 0, PAD = 10;
+  function sx(x){ return PAD + (x - XMIN) / (XMAX - XMIN) * (W - 2 * PAD); }
+  function sy(y){ var r = FUNCS[state.fn].y; return H - PAD - (y - r[0]) / (r[1] - r[0]) * (H - 2 * PAD); }
+  function ux(px){ return XMIN + (px - PAD) / (W - 2 * PAD) * (XMAX - XMIN); }
+  function n(v){ return v.toFixed(1); }
+
+  function curvePaths(F){
+    var N = 400, out = [], cur = null, sign = 0, i, x0, x1, s;
+    for (i = 0; i < N; i++){
+      x0 = XMIN + (XMAX - XMIN) * i / N;
+      x1 = XMIN + (XMAX - XMIN) * (i + 1) / N;
+      s = F.d((x0 + x1) / 2); s = s > 1e-9 ? 1 : s < -1e-9 ? -1 : 0;
+      if (!cur || s !== sign){
+        cur = { sign: s, d: "M" + n(sx(x0)) + " " + n(sy(F.f(x0))) };
+        out.push(cur); sign = s;
+      }
+      cur.d += "L" + n(sx(x1)) + " " + n(sy(F.f(x1)));
+    }
+    return out;
+  }
+
+  function draw(){
+    var box = svg.getBoundingClientRect();
+    W = Math.max(200, box.width); H = Math.max(160, box.height);
+    svg.setAttribute("viewBox", "0 0 " + n(W) + " " + n(H));
+
+    var F = FUNCS[state.fn], yr = F.y, a = state.a, b = state.b;
+    var fa = F.f(a), fb = F.f(b), same = Math.abs(a - b) < 1e-9;
+    var rate = same ? 0 : (fb - fa) / (b - a);
+    var cls = !state.color || same || round3(rate) === 0 ? "" : (rate > 0 ? " up" : " down");
+    var p = [], x, y, i;
+
+    p.push('<defs><clipPath id="clip"><rect x="0" y="0" width="' + n(W) + '" height="' + n(H) + '"/></clipPath></defs>');
+
+    for (x = XMIN; x <= XMAX; x++) if (x !== 0)
+      p.push('<line class="gl" x1="' + n(sx(x)) + '" y1="0" x2="' + n(sx(x)) + '" y2="' + n(H) + '"/>');
+    for (i = Math.ceil(yr[0] / F.yGrid); i * F.yGrid <= yr[1]; i++) if (i !== 0){
+      y = i * F.yGrid;
+      p.push('<line class="gl" x1="0" y1="' + n(sy(y)) + '" x2="' + n(W) + '" y2="' + n(sy(y)) + '"/>');
+    }
+
+    p.push('<line class="ax" x1="0" y1="' + n(sy(0)) + '" x2="' + n(W) + '" y2="' + n(sy(0)) + '"/>');
+    p.push('<line class="ax" x1="' + n(sx(0)) + '" y1="0" x2="' + n(sx(0)) + '" y2="' + n(H) + '"/>');
+
+    for (x = XMIN + 1; x < XMAX; x++) if (x !== 0)
+      p.push('<text class="tk" text-anchor="middle" x="' + n(sx(x)) + '" y="' + n(sy(0) + 15) + '">' + fmt(x) + '</text>');
+    for (i = Math.ceil(yr[0] / F.yLabel); i * F.yLabel < yr[1]; i++) if (i !== 0){
+      y = i * F.yLabel;
+      p.push('<text class="tk" text-anchor="end" x="' + n(sx(0) - 6) + '" y="' + n(sy(y) + 4) + '">' + fmt(y) + '</text>');
+    }
+    p.push('<text class="tk" text-anchor="end" x="' + n(sx(0) - 6) + '" y="' + n(sy(0) + 15) + '">O</text>');
+    p.push('<text class="tk" text-anchor="end" x="' + n(W - 6) + '" y="' + n(sy(0) - 7) + '">x</text>');
+    p.push('<text class="tk" x="' + n(sx(0) + 7) + '" y="14">y</text>');
+
+    p.push('<g clip-path="url(#clip)">');
+    var runs = state.curve ? curvePaths(F) : [];
+    for (i = 0; i < runs.length; i++)
+      p.push('<path class="curve' + (state.color && runs[i].sign !== 0 ? (runs[i].sign > 0 ? " up" : " down") : "") + '" d="' + runs[i].d + '"/>');
+
+    if (!same){
+      p.push('<path class="leg" d="M' + n(sx(a)) + ' ' + n(sy(fa)) + 'L' + n(sx(b)) + ' ' + n(sy(fa)) + 'L' + n(sx(b)) + ' ' + n(sy(fb)) + '"/>');
+      var xl = XMIN - 1, xr = XMAX + 1;
+      p.push('<line class="sec' + cls + '" x1="' + n(sx(xl)) + '" y1="' + n(sy(fa + rate * (xl - a))) +
+             '" x2="' + n(sx(xr)) + '" y2="' + n(sy(fa + rate * (xr - a))) + '"/>');
+    }
+    p.push('</g>');
+
+    function point(xv, yv, name, left){
+      var px = sx(xv), py = sy(yv);
+      var ly = py < 34 ? py + 26 : py - 14;
+      var lx = clamp(px + (left ? -14 : 14), 14, W - 14);
+      p.push('<circle class="halo" cx="' + n(px) + '" cy="' + n(py) + '" r="15"/>');
+      p.push('<circle class="pt" cx="' + n(px) + '" cy="' + n(py) + '" r="6.5"/>');
+      p.push('<text class="pl" text-anchor="middle" x="' + n(lx) + '" y="' + n(ly) + '">' + name + '</text>');
+    }
+    point(a, fa, "A", a <= b);
+    point(b, fb, "B", a > b);
+
+    svg.innerHTML = p.join("");
+
+    /* ---------- 式 ---------- */
+    /* 2点が重なったときは2段目を見えなくするだけ。高さは変えない */
+    var approxMid = !(exact(fa) && exact(fb));
+    var approxVal = approxMid || !exact(rate);
+    eqEl.classList.toggle("hide", same);
+    eqEl.innerHTML =
+      '<span>' + (approxMid ? "≈" : "=") + '</span>' +
+      '<span class="frac"><span>' + fmt(fb) + ' − ' + par(fa) + '</span><span>' + fmt(b) + ' − ' + par(a) + '</span></span>' +
+      '<span>' + (approxVal ? "≈" : "=") + '</span>' +
+      '<span class="val' + cls + '">' + signed(rate) + '</span>';
+    pA.textContent = "A(" + fmt(a) + ", " + fmt(fa) + ")";
+    pB.textContent = "B(" + fmt(b) + ", " + fmt(fb) + ")";
+  }
+
+  /* ---------- 操作 ---------- */
+  var coefEl = document.getElementById("coef");
+  var zoomEl = document.getElementById("zoom"), zIn = document.getElementById("zIn"), zOut = document.getElementById("zOut");
+  zIn.addEventListener("click", function(){ zoom = Math.min(16, zoom * 2); buildCustom(); update(); });
+  zOut.addEventListener("click", function(){ zoom = Math.max(1, zoom / 2); buildCustom(); update(); });
+  var cIn = ["c3", "c2", "c1", "c0"].map(function(id){ return document.getElementById(id); });
+  function syncCoef(){
+    var t = PRESET[state.fn] || coefText;
+    coefEl.classList.toggle("hide", state.fn === "exp");
+    zoomEl.classList.toggle("hide", state.fn !== "custom");
+    zIn.disabled = zoom >= 16; zOut.disabled = zoom <= 1;
+    for (var i = 0; i < 4; i++){ cIn[i].value = t[i]; cIn[i].disabled = state.fn === "exp"; }
+  }
+  cIn.forEach(function(el, i){
+    el.addEventListener("change", function(){
+      var base = (PRESET[state.fn] || coefText).slice();
+      if (parseCoef(el.value) !== null){
+        base[i] = el.value.replace(/\s+/g, "") || "0";
+        coefText = base;
+        zoom = 1;
+        state.fn = "custom";
+        press(document.getElementById("fnSeg"), "data-fn", "custom");
+        buildCustom();
+      }
+      update();
+    });
+    el.addEventListener("keydown", function(e){ if (e.key === "Enter") el.blur(); });
+    el.addEventListener("focus", function(){ el.select(); });
+  });
+
+  function syncControls(){
+    var fixed = state.mode === "fixed";
+    syncCoef();
+    s1.min = XMIN; s1.max = fixed ? r1(XMAX - state.h) : XMAX; s1.value = state.a;
+    n1.value = String(r2(state.a));
+    l1.textContent = "a =";
+    n1.setAttribute("aria-label", "点Aのx座標 a");
+    s1.setAttribute("aria-label", "点Aのx座標 a");
+    if (fixed){
+      s2.min = HMIN; s2.max = HMAX; s2.value = state.h;
+      n2.value = String(r2(state.h));
+      l2.textContent = "幅 h =";
+      n2.setAttribute("aria-label", "2点の幅 h");
+      s2.setAttribute("aria-label", "2点の幅 h");
+    } else {
+      s2.min = XMIN; s2.max = XMAX; s2.value = state.b;
+      n2.value = String(r2(state.b));
+      l2.textContent = "b =";
+      n2.setAttribute("aria-label", "点Bのx座標 b");
+      s2.setAttribute("aria-label", "点Bのx座標 b");
+    }
+  }
+  function update(){ syncControls(); draw(); }
+
+  function setFixedA(a){
+    state.a = r2(clamp(a, XMIN, XMAX - state.h));
+    state.b = r2(state.a + state.h);
+  }
+
+  s1.addEventListener("input", function(){
+    var v = r1(parseFloat(s1.value));
+    if (state.mode === "free") state.a = v; else setFixedA(v);
+    update();
+  });
+  s2.addEventListener("input", function(){
+    var v = r1(parseFloat(s2.value));
+    if (state.mode === "free") state.b = v;
+    else { state.h = clamp(v, HMIN, HMAX); setFixedA(state.a); }
+    update();
+  });
+
+  /* 数値を直接入れる。確定(Enter か 入力欄の外をタップ)で反映 */
+  function typed(el, which){
+    var v = parseFloat(el.value);
+    if (isFinite(v)){
+      if (state.mode === "free") state[which] = r2(clamp(v, XMIN, XMAX));
+      else if (which === "a") setFixedA(v);
+      else { state.h = r2(clamp(v, HIN, HMAX)); setFixedA(state.a); }
+    }
+    update();
+  }
+  n1.addEventListener("change", function(){ typed(n1, "a"); });
+  n2.addEventListener("change", function(){ typed(n2, "b"); });
+  function blurOnEnter(e){ if (e.key === "Enter") e.target.blur(); }
+  n1.addEventListener("keydown", blurOnEnter);
+  n2.addEventListener("keydown", blurOnEnter);
+
+  function press(group, attr, value){
+    var bs = group.querySelectorAll("button");
+    for (var i = 0; i < bs.length; i++)
+      bs[i].setAttribute("aria-pressed", bs[i].getAttribute(attr) === value ? "true" : "false");
+  }
+  document.getElementById("fnSeg").addEventListener("click", function(e){
+    var b = e.target.closest("button"); if (!b) return;
+    state.fn = b.getAttribute("data-fn");
+    press(this, "data-fn", state.fn);
+    update();
+  });
+  document.getElementById("modeSeg").addEventListener("click", function(e){
+    var b = e.target.closest("button"); if (!b) return;
+    state.mode = b.getAttribute("data-mode");
+    press(this, "data-mode", state.mode);
+    if (state.mode === "fixed"){
+      var lo = Math.min(state.a, state.b);
+      state.h = r2(clamp(Math.abs(state.b - state.a), HIN, HMAX));
+      setFixedA(lo);
+    }
+    update();
+  });
+  colorOn.addEventListener("change", function(){ state.color = colorOn.checked; draw(); });
+  var curveOn = document.getElementById("curveOn");
+  curveOn.addEventListener("change", function(){ state.curve = curveOn.checked; draw(); });
+
+  /* グラフ上で点をつまむ。触れた場所に近いほうの点が動く */
+  var drag = null;
+  function xAt(e){ return ux(e.clientX - svg.getBoundingClientRect().left); }
+  function moveTo(xv){
+    if (state.mode === "free"){
+      state[drag] = r1(clamp(xv, XMIN, XMAX));
+    } else {
+      setFixedA(drag === "a" ? xv : xv - state.h);
+    }
+    update();
+  }
+  svg.addEventListener("pointerdown", function(e){
+    var xv = xAt(e);
+    drag = Math.abs(xv - state.a) <= Math.abs(xv - state.b) ? "a" : "b";
+    try { svg.setPointerCapture(e.pointerId); } catch (err) {}
+    svg.classList.add("dragging");
+    moveTo(xv);
+    e.preventDefault();
+  });
+  svg.addEventListener("pointermove", function(e){ if (drag) moveTo(xAt(e)); });
+  function endDrag(){ drag = null; svg.classList.remove("dragging"); }
+  svg.addEventListener("pointerup", endDrag);
+  svg.addEventListener("pointercancel", endDrag);
+
+  if (window.ResizeObserver) new ResizeObserver(draw).observe(svg);
+  else window.addEventListener("resize", draw);
+
+  update();
+})();
+</script>
+</body>
+</html>
