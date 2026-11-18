@@ -119,9 +119,10 @@ button:focus-visible,input:focus-visible{outline:2.5px solid var(--down);outline
 }
 #g{display:block;width:100%;height:100%;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
 #g.dragging{cursor:grabbing}
-.zoom{position:absolute;top:6px;right:6px;display:flex;gap:6px}
-.zoom button{appearance:none;font:inherit;font-size:13px;min-width:46px;height:34px;padding:0 8px;border-radius:8px;border:1.5px solid var(--grid);background:var(--panel);color:var(--ink);cursor:pointer}
-.zoom button:disabled{color:var(--axis);cursor:default}
+.pad{position:absolute;right:6px;bottom:6px;display:grid;grid-template-columns:repeat(3,34px);grid-template-rows:repeat(3,34px);gap:3px}
+.pad button{appearance:none;font:inherit;font-family:var(--font-note);font-weight:600;font-size:16px;line-height:1;padding:0;border-radius:8px;border:1.5px solid var(--grid);background:var(--panel);color:var(--ink);opacity:.92;cursor:pointer;touch-action:manipulation}
+.pad button.home{font-size:12px}
+.pad button:disabled{color:var(--axis);cursor:default}
 .gl{stroke:var(--grid);stroke-width:1}
 .ax{stroke:var(--axis);stroke-width:1.5}
 .tk{fill:var(--muted);font-family:var(--font-note);font-size:12px}
@@ -227,9 +228,14 @@ button:focus-visible,input:focus-visible{outline:2.5px solid var(--down);outline
 
   <div class="plot">
     <svg id="g" role="img" aria-label="関数のグラフと、2点A・Bを通る直線"></svg>
-    <div class="zoom hide" id="zoom">
-      <button type="button" id="zOut" aria-label="縦方向をちぢめて表示">縦 −</button>
-      <button type="button" id="zIn" aria-label="縦方向を広げて表示">縦 ＋</button>
+    <div class="pad" id="pad">
+      <button type="button" data-v="in" style="grid-area:1/1" aria-label="拡大">＋</button>
+      <button type="button" data-v="up" style="grid-area:1/2" aria-label="上を見る">↑</button>
+      <button type="button" data-v="left" style="grid-area:2/1" aria-label="左を見る">←</button>
+      <button type="button" data-v="home" class="home" style="grid-area:2/2" aria-label="最初の見え方に戻る">戻る</button>
+      <button type="button" data-v="right" style="grid-area:2/3" aria-label="右を見る">→</button>
+      <button type="button" data-v="out" style="grid-area:3/1" aria-label="縮小">−</button>
+      <button type="button" data-v="down" style="grid-area:3/2" aria-label="下を見る">↓</button>
     </div>
   </div>
 
@@ -273,7 +279,9 @@ button:focus-visible,input:focus-visible{outline:2.5px solid var(--down);outline
 (function(){
   "use strict";
 
-  var XMIN = -4, XMAX = 4, HMIN = 0.1, HMAX = 5, HIN = 0.01;
+  var XMIN = -4, XMAX = 4, LIM = 100, HMIN = 0.1, HMAX = 5, HIN = 0.01;
+  /* 見えている 範囲。上下左右・拡大・縮小の ボタンで 変わり、「戻る」で 関数ごとの 最初の 範囲に 戻る */
+  var view = { x0: XMIN, x1: XMAX, y0: -1, y1: 17 };
 
   var FUNCS = {
     exp: { f: function(x){ return Math.pow(2, x); },
@@ -290,7 +298,6 @@ button:focus-visible,input:focus-visible{outline:2.5px solid var(--down);outline
   /* 係数を自分で決める3次までの式。縦の範囲はグラフ全体が入るように自動で決める */
   var PRESET = { sq: ["0", "1", "0", "0"], cub: ["1/4", "0", "-3", "0"] };
   var coefText = ["1", "0", "-3", "0"];
-  var zoom = 1;
   function parseCoef(t){
     t = String(t).replace(/[０-９．／]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
                  .replace(/[−ー―‐－]/g, "-").replace(/[＋]/g, "+").replace(/\s+/g, "");
@@ -312,7 +319,6 @@ button:focus-visible,input:focus-visible{outline:2.5px solid var(--down);outline
     var lo = 0, hi = 0, i, v;
     for (i = 0; i <= 400; i++){ v = f(XMIN + (XMAX - XMIN) * i / 400); if (v < lo) lo = v; if (v > hi) hi = v; }
     if (hi - lo < 4){ var mid = (hi + lo) / 2; lo = Math.min(lo, mid - 2); hi = Math.max(hi, mid + 2); }
-    lo /= zoom; hi /= zoom;
     var pad = (hi - lo) * 0.07, step = niceStep((hi - lo) / 8);
     FUNCS.custom = { f: f, d: d, y: [lo - pad, hi + pad], yGrid: step, yLabel: step * 2 };
   }
@@ -339,16 +345,32 @@ button:focus-visible,input:focus-visible{outline:2.5px solid var(--down);outline
 
   /* ---------- グラフ ---------- */
   var W = 0, H = 0, PAD = 10;
-  function sx(x){ return PAD + (x - XMIN) / (XMAX - XMIN) * (W - 2 * PAD); }
-  function sy(y){ var r = FUNCS[state.fn].y; return H - PAD - (y - r[0]) / (r[1] - r[0]) * (H - 2 * PAD); }
-  function ux(px){ return XMIN + (px - PAD) / (W - 2 * PAD) * (XMAX - XMIN); }
+  function sx(x){ return PAD + (x - view.x0) / (view.x1 - view.x0) * (W - 2 * PAD); }
+  function sy(y){ return H - PAD - (y - view.y0) / (view.y1 - view.y0) * (H - 2 * PAD); }
+  function ux(px){ return view.x0 + (px - PAD) / (W - 2 * PAD) * (view.x1 - view.x0); }
+  function resetView(){ var r = FUNCS[state.fn].y; view = { x0: XMIN, x1: XMAX, y0: r[0], y1: r[1] }; }
+  /* A，B が 見えて いなければ、2点とも 入る ところへ ずらす（入らない ときは 広げる） */
+  function showPoints(){
+    var F = FUNCS[state.fn], a = state.a, b = state.b, ya = F.f(a), yb = F.f(b);
+    var w = view.x1 - view.x0, h = view.y1 - view.y0, lo, hi, c;
+    if (Math.min(a, b) < view.x0 || Math.max(a, b) > view.x1){
+      lo = Math.min(a, b); hi = Math.max(a, b);
+      while (w < (hi - lo) * 1.25 && w < 256) w *= 2;
+      c = (lo + hi) / 2; view.x0 = c - w / 2; view.x1 = c + w / 2;
+    }
+    if (isFinite(ya) && isFinite(yb) && (Math.min(ya, yb) < view.y0 || Math.max(ya, yb) > view.y1)){
+      lo = Math.min(ya, yb); hi = Math.max(ya, yb);
+      while (h < (hi - lo) * 1.25 && h < 1e6) h *= 2;
+      c = (lo + hi) / 2; view.y0 = c - h / 2; view.y1 = c + h / 2;
+    }
+  }
   function n(v){ return v.toFixed(1); }
 
   function curvePaths(F){
     var N = 400, out = [], cur = null, sign = 0, i, x0, x1, s;
     for (i = 0; i < N; i++){
-      x0 = XMIN + (XMAX - XMIN) * i / N;
-      x1 = XMIN + (XMAX - XMIN) * (i + 1) / N;
+      x0 = view.x0 + (view.x1 - view.x0) * i / N;
+      x1 = view.x0 + (view.x1 - view.x0) * (i + 1) / N;
       s = F.d((x0 + x1) / 2); s = s > 1e-9 ? 1 : s < -1e-9 ? -1 : 0;
       if (!cur || s !== sign){
         cur = { sign: s, d: "M" + n(sx(x0)) + " " + n(sy(F.f(x0))) };
@@ -364,7 +386,12 @@ button:focus-visible,input:focus-visible{outline:2.5px solid var(--down);outline
     W = Math.max(200, box.width); H = Math.max(160, box.height);
     svg.setAttribute("viewBox", "0 0 " + n(W) + " " + n(H));
 
-    var F = FUNCS[state.fn], yr = F.y, a = state.a, b = state.b;
+    var F = FUNCS[state.fn], a = state.a, b = state.b;
+    /* 目盛りは 見えて いる 幅に 合わせる（最初の 範囲では 前と 同じ 間かく） */
+    var kx = (view.x1 - view.x0) / (XMAX - XMIN), ky = (view.y1 - view.y0) / (F.y[1] - F.y[0]);
+    var gx = niceStep(kx * 0.999), gy = niceStep(F.yGrid * ky * 0.999), ly = gy * F.yLabel / F.yGrid;
+    var axY = clamp(sy(0), 0, H), axX = clamp(sx(0), 0, W);
+    var tyX = clamp(sy(0) + 15, 14, H - 4), txY = sx(0) - 6 < 24 ? 30 : Math.min(sx(0) - 6, W - 4), anchorY = sx(0) - 6 < 24 ? "start" : "end";
     var fa = F.f(a), fb = F.f(b), same = Math.abs(a - b) < 1e-9;
     var rate = same ? 0 : (fb - fa) / (b - a);
     var cls = !state.color || same || round3(rate) === 0 ? "" : (rate > 0 ? " up" : " down");
@@ -372,25 +399,31 @@ button:focus-visible,input:focus-visible{outline:2.5px solid var(--down);outline
 
     p.push('<defs><clipPath id="clip"><rect x="0" y="0" width="' + n(W) + '" height="' + n(H) + '"/></clipPath></defs>');
 
-    for (x = XMIN; x <= XMAX; x++) if (x !== 0)
+    for (i = Math.ceil(view.x0 / gx); i * gx <= view.x1; i++) if (i !== 0){
+      x = i * gx;
       p.push('<line class="gl" x1="' + n(sx(x)) + '" y1="0" x2="' + n(sx(x)) + '" y2="' + n(H) + '"/>');
-    for (i = Math.ceil(yr[0] / F.yGrid); i * F.yGrid <= yr[1]; i++) if (i !== 0){
-      y = i * F.yGrid;
+    }
+    for (i = Math.ceil(view.y0 / gy); i * gy <= view.y1; i++) if (i !== 0){
+      y = i * gy;
       p.push('<line class="gl" x1="0" y1="' + n(sy(y)) + '" x2="' + n(W) + '" y2="' + n(sy(y)) + '"/>');
     }
 
-    p.push('<line class="ax" x1="0" y1="' + n(sy(0)) + '" x2="' + n(W) + '" y2="' + n(sy(0)) + '"/>');
-    p.push('<line class="ax" x1="' + n(sx(0)) + '" y1="0" x2="' + n(sx(0)) + '" y2="' + n(H) + '"/>');
+    if (sy(0) >= 0 && sy(0) <= H) p.push('<line class="ax" x1="0" y1="' + n(axY) + '" x2="' + n(W) + '" y2="' + n(axY) + '"/>');
+    if (sx(0) >= 0 && sx(0) <= W) p.push('<line class="ax" x1="' + n(axX) + '" y1="0" x2="' + n(axX) + '" y2="' + n(H) + '"/>');
 
-    for (x = XMIN + 1; x < XMAX; x++) if (x !== 0)
-      p.push('<text class="tk" text-anchor="middle" x="' + n(sx(x)) + '" y="' + n(sy(0) + 15) + '">' + fmt(x) + '</text>');
-    for (i = Math.ceil(yr[0] / F.yLabel); i * F.yLabel < yr[1]; i++) if (i !== 0){
-      y = i * F.yLabel;
-      p.push('<text class="tk" text-anchor="end" x="' + n(sx(0) - 6) + '" y="' + n(sy(y) + 4) + '">' + fmt(y) + '</text>');
+    for (i = Math.floor(view.x0 / gx) + 1; i * gx < view.x1; i++) if (i !== 0){
+      x = i * gx;
+      if (sx(x) < 12 || sx(x) > W - 12) continue;
+      p.push('<text class="tk" text-anchor="middle" x="' + n(sx(x)) + '" y="' + n(tyX) + '">' + fmt(x) + '</text>');
     }
-    p.push('<text class="tk" text-anchor="end" x="' + n(sx(0) - 6) + '" y="' + n(sy(0) + 15) + '">O</text>');
-    p.push('<text class="tk" text-anchor="end" x="' + n(W - 6) + '" y="' + n(sy(0) - 7) + '">x</text>');
-    p.push('<text class="tk" x="' + n(sx(0) + 7) + '" y="14">y</text>');
+    for (i = Math.floor(view.y0 / ly) + 1; i * ly < view.y1; i++) if (i !== 0){
+      y = i * ly;
+      p.push('<text class="tk" text-anchor="' + anchorY + '" x="' + n(txY) + '" y="' + n(sy(y) + 4) + '">' + fmt(y) + '</text>');
+    }
+    if (sx(0) > 0 && sx(0) < W && sy(0) > 0 && sy(0) < H)
+      p.push('<text class="tk" text-anchor="end" x="' + n(sx(0) - 6) + '" y="' + n(sy(0) + 15) + '">O</text>');
+    p.push('<text class="tk" text-anchor="end" x="' + n(W - 6) + '" y="' + n(clamp(sy(0) - 7, 14, H - 4)) + '">x</text>');
+    p.push('<text class="tk" x="' + n(clamp(sx(0) + 7, 4, W - 14)) + '" y="14">y</text>');
 
     p.push('<g clip-path="url(#clip)">');
     var runs = state.curve ? curvePaths(F) : [];
@@ -399,7 +432,7 @@ button:focus-visible,input:focus-visible{outline:2.5px solid var(--down);outline
 
     if (!same){
       p.push('<path class="leg" d="M' + n(sx(a)) + ' ' + n(sy(fa)) + 'L' + n(sx(b)) + ' ' + n(sy(fa)) + 'L' + n(sx(b)) + ' ' + n(sy(fb)) + '"/>');
-      var xl = XMIN - 1, xr = XMAX + 1;
+      var xl = view.x0 - 1, xr = view.x1 + 1;
       p.push('<line class="sec' + cls + '" x1="' + n(sx(xl)) + '" y1="' + n(sy(fa + rate * (xl - a))) +
              '" x2="' + n(sx(xr)) + '" y2="' + n(sy(fa + rate * (xr - a))) + '"/>');
     }
@@ -434,15 +467,28 @@ button:focus-visible,input:focus-visible{outline:2.5px solid var(--down);outline
 
   /* ---------- 操作 ---------- */
   var coefEl = document.getElementById("coef");
-  var zoomEl = document.getElementById("zoom"), zIn = document.getElementById("zIn"), zOut = document.getElementById("zOut");
-  zIn.addEventListener("click", function(){ zoom = Math.min(16, zoom * 2); buildCustom(); update(); });
-  zOut.addEventListener("click", function(){ zoom = Math.max(1, zoom / 2); buildCustom(); update(); });
+  var padEl = document.getElementById("pad");
+  padEl.addEventListener("click", function(e){
+    var bt = e.target.closest("button"); if (!bt || bt.disabled) return;
+    var v = bt.getAttribute("data-v"), w = view.x1 - view.x0, h = view.y1 - view.y0, cx = (view.x0 + view.x1) / 2, cy = (view.y0 + view.y1) / 2, k;
+    if (v === "home") resetView();
+    else if (v === "left"){ view.x0 -= w / 4; view.x1 -= w / 4; }
+    else if (v === "right"){ view.x0 += w / 4; view.x1 += w / 4; }
+    else if (v === "up"){ view.y0 += h / 4; view.y1 += h / 4; }
+    else if (v === "down"){ view.y0 -= h / 4; view.y1 -= h / 4; }
+    else {
+      k = v === "in" ? 0.5 : 2;
+      view.x0 = cx - w * k / 2; view.x1 = cx + w * k / 2; view.y0 = cy - h * k / 2; view.y1 = cy + h * k / 2;
+    }
+    update();
+  });
   var cIn = ["c3", "c2", "c1", "c0"].map(function(id){ return document.getElementById(id); });
   function syncCoef(){
     var t = PRESET[state.fn] || coefText;
     coefEl.classList.toggle("hide", state.fn === "exp");
-    zoomEl.classList.toggle("hide", state.fn !== "custom");
-    zIn.disabled = zoom >= 16; zOut.disabled = zoom <= 1;
+    var wNow = view.x1 - view.x0;
+    padEl.querySelector('[data-v="in"]').disabled = wNow <= 0.5 + 1e-9;
+    padEl.querySelector('[data-v="out"]').disabled = wNow >= 256 - 1e-9;
     for (var i = 0; i < 4; i++){ cIn[i].value = t[i]; cIn[i].disabled = state.fn === "exp"; }
   }
   cIn.forEach(function(el, i){
@@ -451,10 +497,10 @@ button:focus-visible,input:focus-visible{outline:2.5px solid var(--down);outline
       if (parseCoef(el.value) !== null){
         base[i] = el.value.replace(/\s+/g, "") || "0";
         coefText = base;
-        zoom = 1;
         state.fn = "custom";
         press(document.getElementById("fnSeg"), "data-fn", "custom");
         buildCustom();
+        resetView();
       }
       update();
     });
@@ -465,7 +511,7 @@ button:focus-visible,input:focus-visible{outline:2.5px solid var(--down);outline
   function syncControls(){
     var fixed = state.mode === "fixed";
     syncCoef();
-    s1.min = XMIN; s1.max = fixed ? r1(XMAX - state.h) : XMAX; s1.value = state.a;
+    s1.min = r1(view.x0); s1.max = fixed ? Math.max(r1(view.x0), r1(view.x1 - state.h)) : r1(view.x1); s1.value = state.a;
     n1.value = String(r2(state.a));
     l1.textContent = "a =";
     n1.setAttribute("aria-label", "点Aのx座標 a");
@@ -477,7 +523,7 @@ button:focus-visible,input:focus-visible{outline:2.5px solid var(--down);outline
       n2.setAttribute("aria-label", "2点の幅 h");
       s2.setAttribute("aria-label", "2点の幅 h");
     } else {
-      s2.min = XMIN; s2.max = XMAX; s2.value = state.b;
+      s2.min = r1(view.x0); s2.max = r1(view.x1); s2.value = state.b;
       n2.value = String(r2(state.b));
       l2.textContent = "b =";
       n2.setAttribute("aria-label", "点Bのx座標 b");
@@ -487,7 +533,7 @@ button:focus-visible,input:focus-visible{outline:2.5px solid var(--down);outline
   function update(){ syncControls(); draw(); }
 
   function setFixedA(a){
-    state.a = r2(clamp(a, XMIN, XMAX - state.h));
+    state.a = r2(clamp(a, -LIM, LIM - state.h));
     state.b = r2(state.a + state.h);
   }
 
@@ -507,9 +553,10 @@ button:focus-visible,input:focus-visible{outline:2.5px solid var(--down);outline
   function typed(el, which){
     var v = parseFloat(el.value);
     if (isFinite(v)){
-      if (state.mode === "free") state[which] = r2(clamp(v, XMIN, XMAX));
+      if (state.mode === "free") state[which] = r2(clamp(v, -LIM, LIM));
       else if (which === "a") setFixedA(v);
       else { state.h = r2(clamp(v, HIN, HMAX)); setFixedA(state.a); }
+      showPoints();
     }
     update();
   }
@@ -528,6 +575,7 @@ button:focus-visible,input:focus-visible{outline:2.5px solid var(--down);outline
     var b = e.target.closest("button"); if (!b) return;
     state.fn = b.getAttribute("data-fn");
     press(this, "data-fn", state.fn);
+    resetView();
     update();
   });
   document.getElementById("modeSeg").addEventListener("click", function(e){
@@ -550,7 +598,7 @@ button:focus-visible,input:focus-visible{outline:2.5px solid var(--down);outline
   function xAt(e){ return ux(e.clientX - svg.getBoundingClientRect().left); }
   function moveTo(xv){
     if (state.mode === "free"){
-      state[drag] = r1(clamp(xv, XMIN, XMAX));
+      state[drag] = r1(clamp(xv, -LIM, LIM));
     } else {
       setFixedA(drag === "a" ? xv : xv - state.h);
     }
@@ -572,6 +620,7 @@ button:focus-visible,input:focus-visible{outline:2.5px solid var(--down);outline
   if (window.ResizeObserver) new ResizeObserver(draw).observe(svg);
   else window.addEventListener("resize", draw);
 
+  resetView();
   update();
 })();
 </script>
